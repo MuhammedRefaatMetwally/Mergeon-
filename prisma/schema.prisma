@@ -1,0 +1,155 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+enum PRStatus {
+  OPEN
+  CLOSED
+  MERGED
+}
+
+enum WebhookEventStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(MEMBER)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  organizations OrganizationMember[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  githubOrg String   @unique @map("github_org")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members      OrganizationMember[]
+  repositories Repository[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  role           UserRole @default(MEMBER)
+  joinedAt       DateTime @default(now()) @map("joined_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+model Repository {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  fullName       String   @unique @map("full_name")
+  githubId       Int      @unique @map("github_id")
+  private        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pullRequests  PullRequest[]
+  webhookEvents WebhookEvent[]
+
+  @@map("repositories")
+}
+
+model PullRequest {
+  id             String   @id @default(uuid())
+  repositoryId   String   @map("repository_id")
+  githubId       Int      @map("github_id")
+  number         Int
+  title          String
+  authorUsername String   @map("author_username")
+  status         PRStatus @default(OPEN)
+  isDraft        Boolean  @default(false) @map("is_draft")
+  additions      Int      @default(0)
+  deletions      Int      @default(0)
+  changedFiles   Int      @default(0) @map("changed_files")
+  openedAt       DateTime @map("opened_at")
+  mergedAt       DateTime? @map("merged_at")
+  closedAt       DateTime? @map("closed_at")
+  cycleTimeHours Float?   @map("cycle_time_hours")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  repository Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  reviews    PRReview[]
+
+  @@unique([repositoryId, number])
+  @@map("pull_requests")
+}
+
+model PRReview {
+  id             String   @id @default(uuid())
+  pullRequestId  String   @map("pull_request_id")
+  reviewerUsername String @map("reviewer_username")
+  state          String
+  submittedAt    DateTime @map("submitted_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@map("pr_reviews")
+}
+
+model WebhookEvent {
+  id           String             @id @default(uuid())
+  repositoryId String?            @map("repository_id")
+  eventType    String             @map("event_type")
+  payload      Json
+  status       WebhookEventStatus @default(PENDING)
+  errorMessage String?            @map("error_message")
+  processedAt  DateTime?          @map("processed_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  repository Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+
+  @@map("webhook_events")
+}
